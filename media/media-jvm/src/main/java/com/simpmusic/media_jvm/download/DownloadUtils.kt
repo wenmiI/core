@@ -5,6 +5,8 @@ import com.maxrave.domain.data.entities.DownloadState
 import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.mediaservice.handler.DownloadHandler
 import com.maxrave.domain.notification.DesktopNotificationManager
+import com.maxrave.domain.repository.AccountDownloadsRepository
+import com.maxrave.domain.repository.LocalAudioReader
 import com.maxrave.domain.repository.SongRepository
 import com.maxrave.domain.repository.StreamRepository
 import com.maxrave.domain.utils.isLive
@@ -35,7 +37,11 @@ internal class DownloadUtils(
     private val streamRepository: StreamRepository,
     private val songRepository: SongRepository,
     private val desktopNotificationManager: DesktopNotificationManager,
-) : DownloadHandler {
+    // Account sync: the host's copy of downloaded audio. Null on a build that binds none; every call
+    // is a no-op while no account is signed in.
+    private val accountDownloads: () -> AccountDownloadsRepository?,
+) : DownloadHandler,
+    LocalAudioReader {
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private var _downloads = MutableStateFlow<Map<String, Pair<DownloadHandler.Download?, DownloadHandler.Download?>>>(emptyMap())
@@ -93,6 +99,15 @@ internal class DownloadUtils(
             if (!File(getDownloadPath()).exists()) {
                 File(getDownloadPath()).mkdirs()
             }
+            // Signed in to a sync account whose host has this song: its copy is the download.
+            if (fetchFromAccount(videoId)) {
+                songRepository.updateDownloadState(videoId, DownloadState.STATE_DOWNLOADED)
+                publishDownloadTask(videoId, DownloadState.STATE_DOWNLOADED)
+                onDownloadFinished(videoId, title, succeeded = true)
+                accountDownloads()?.downloaded(videoId)
+                return
+            }
+            var succeeded = false
             songRepository
                 .downloadToFile(
                     song.toTrack(),
@@ -114,9 +129,54 @@ internal class DownloadUtils(
                         )
                         publishDownloadTask(videoId, DownloadState.STATE_DOWNLOADED)
                         onDownloadFinished(videoId, title, succeeded = true)
+                        succeeded = true
                     }
                 }
+            // Told once the flow has ended, so the file is the finished one and not the raw stream.
+            if (succeeded) accountDownloads()?.downloaded(videoId)
         }
+    }
+
+    /**
+     * Saves the account host's copy of [videoId] as this device's download. False when no account is
+     * signed in, the host lacks the song or cannot be reached: the caller then downloads from YouTube.
+     */
+    private suspend fun fetchFromAccount(videoId: String): Boolean {
+        val account = accountDownloads() ?: return false
+        // Named without the id until it is whole: the player takes any file here whose name holds it.
+        val staged = File(getDownloadPath(), "account-${System.nanoTime()}.part")
+        return try {
+            val extension = staged.outputStream().use { out -> account.fetch(videoId) { bytes, length -> out.write(bytes, 0, length) } }
+            extension != null && staged.length() > 0 && staged.renameTo(File(getDownloadPath(), "$videoId.$extension"))
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Logger.e(TAG, "account host fetch failed", e)
+            false
+        } finally {
+            staged.delete()
+        }
+    }
+
+    /** The audio file of a finished download, however it got here. */
+    private fun downloadedAudio(videoId: String): File? =
+        File(getDownloadPath())
+            .listFiles()
+            ?.firstOrNull { it.name.contains(videoId) && !it.name.contains(MERGING_DATA_TYPE.VIDEO) && it.length() > 0 }
+
+    override suspend fun read(
+        videoId: String,
+        write: suspend (bytes: ByteArray, length: Int) -> Unit,
+    ): Boolean {
+        val file = downloadedAudio(videoId) ?: return false
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                write(buffer, read)
+            }
+        }
+        return true
     }
 
     // ===== Desktop download notifications =====
@@ -188,6 +248,7 @@ internal class DownloadUtils(
     }
 
     override fun removeDownload(videoId: String) {
+        accountDownloads()?.removed(videoId)
         File(getDownloadPath())
             .listFiles()
             .filter {

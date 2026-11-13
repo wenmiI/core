@@ -16,10 +16,14 @@ import kotlinx.datetime.LocalDateTime
 internal class SyncSnapshot(
     private val dao: SyncDao,
 ) {
-    /** @param includeHistory false while local tracking is off here: such a device neither sends nor takes plays. */
+    /**
+     * @param includeHistory false while local tracking is off here: such a device neither sends nor takes plays.
+     * @param includeDownloads account sync only: the songs downloaded here go out too.
+     */
     suspend fun build(
         deviceId: String,
         includeHistory: Boolean,
+        includeDownloads: Boolean = false,
     ): List<SyncChangeEntity> {
         val changes = mutableListOf<SyncChangeEntity>()
 
@@ -41,6 +45,10 @@ internal class SyncSnapshot(
 
         dao.localPlaylists().forEach { playlist ->
             changes += playlistChanges(playlist, deviceId, playlist.inLibrary.wallToMillis())
+        }
+
+        if (includeDownloads) {
+            dao.downloadedSongs().forEach { add(SyncKind.SONG_DOWNLOAD, it.videoId, SyncOp.SET, ON, it.downloadedAt ?: it.inLibrary) }
         }
 
         if (!includeHistory) return changes

@@ -55,6 +55,15 @@ internal data class PairedPhone(
     val lastSyncAt: Long? = null,
 )
 
+/** The sync account this device is signed in to, and the token the host knows it by. */
+@Serializable
+internal data class SignedInAccount(
+    val server: String,
+    val user: String,
+    val token: String,
+    val serverName: String,
+)
+
 @Serializable
 internal data class SyncPrefsState(
     val deviceId: String? = null,
@@ -65,6 +74,12 @@ internal data class SyncPrefsState(
     val phones: List<PairedPhone> = emptyList(),
     /** Phones removed while away: kept a while so they can be told, under their own key, that they are out. */
     val revoked: List<PairedPhone> = emptyList(),
+    // Account: this device is one of an account's, and plays the phone's part towards its host.
+    val account: SignedInAccount? = null,
+    /** Whether this device downloads what the account's other devices download, and removes what they remove. */
+    val shareDownloads: Boolean = true,
+    /** Songs another device downloaded that this one has yet to. */
+    val wantedDownloads: List<String> = emptyList(),
     // Both.
     val lastSyncAt: Long? = null,
     val lastBackupAt: Long = 0,
@@ -74,7 +89,7 @@ internal data class SyncPrefsState(
     val pendingSettingsFrom: String? = null,
     val dismissedSettingsAt: Long = 0,
 ) {
-    val paired: Boolean get() = desktop != null || phones.isNotEmpty()
+    val paired: Boolean get() = desktop != null || phones.isNotEmpty() || account != null
 }
 
 internal class SyncPrefs(

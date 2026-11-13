@@ -14,6 +14,12 @@ actual fun getDatabaseBuilder(
     ).addTypeConverter(converters)
 }
 
+/** A library kept somewhere other than this user's own: the account sync host keeps one per account. */
+internal fun getDatabaseBuilder(
+    converters: Converters,
+    path: String,
+): RoomDatabase.Builder<MusicDatabase> = Room.databaseBuilder<MusicDatabase>(name = path).addTypeConverter(converters)
+
 actual fun getDatabasePath(): String {
     val dbFile = File(getHomeFolderPath(listOf(".simpmusic", "db")), DB_NAME)
     return dbFile.absolutePath

@@ -32,7 +32,9 @@ internal class SyncEngine(
     suspend fun startPhoneOutbox() {
         val deviceId = prefs.deviceId()
         dao.clearChanges()
-        dao.insertChanges(snapshot.build(deviceId, includeHistory = settings.localTracking()))
+        // Signed in to an account, this device's downloads are part of what it brings.
+        val downloads = prefs.current().account != null
+        dao.insertChanges(snapshot.build(deviceId, includeHistory = settings.localTracking(), includeDownloads = downloads))
     }
 
     suspend fun nextRequest(): SyncRequest {
@@ -295,7 +297,7 @@ internal class SyncEngine(
         val podcastIds = mutableSetOf<String>()
         changes.forEach { change ->
             when (change.entity) {
-                SyncKind.SONG_LIKE -> songIds += change.key
+                SyncKind.SONG_LIKE, SyncKind.SONG_DOWNLOAD -> songIds += change.key
                 SyncKind.ALBUM_LIKE -> albumIds += change.key
                 SyncKind.ARTIST_FOLLOW -> artistIds += change.key
                 SyncKind.PLAYLIST_LIKE -> playlistIds += change.key

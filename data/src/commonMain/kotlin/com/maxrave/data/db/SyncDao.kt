@@ -14,6 +14,7 @@ import com.maxrave.domain.data.entities.SongEntity
 import com.maxrave.domain.data.entities.analytics.EventArtistEntity
 import com.maxrave.domain.data.entities.analytics.PlaybackEventEntity
 import com.maxrave.domain.data.entities.sync.SyncChangeEntity
+import kotlinx.coroutines.flow.Flow
 import kotlinx.datetime.LocalDateTime
 
 /**
@@ -210,6 +211,14 @@ interface SyncDao {
 
     @Query("SELECT * FROM podcast_table WHERE isFavorite = 1")
     suspend fun favoritePodcasts(): List<PodcastsEntity>
+
+    /** Downloads the user made; the ones Smart downloads fetched belong to each device. */
+    @Query("SELECT * FROM song WHERE downloadState = 3 AND (category IS NULL OR category != 'SMART_DOWNLOAD')")
+    suspend fun downloadedSongs(): List<SongEntity>
+
+    /** Changes waiting to be sent; account sync sends them soon after this moves. */
+    @Query("SELECT COUNT(*) FROM sync_change WHERE serverSeq IS NULL")
+    fun pendingCount(): Flow<Int>
 
     // ===== Local playlists =====
 

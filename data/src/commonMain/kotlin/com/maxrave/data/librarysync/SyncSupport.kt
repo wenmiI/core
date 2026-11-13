@@ -40,6 +40,12 @@ internal object SyncKind {
 
     /** key: the play's syncId; the play itself travels as an EventWire. */
     const val HISTORY = "history"
+
+    /**
+     * key: videoId, value "1" downloaded / "0" download removed. Account sync only: between a phone
+     * and its paired computer downloads stay each device's own.
+     */
+    const val SONG_DOWNLOAD = "song_dl"
 }
 
 internal object SyncOp {

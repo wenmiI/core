@@ -36,6 +36,8 @@ kotlin {
                 // Only the Desktop hosts a server; the APK never ships these.
                 implementation(libs.ktor.server.core)
                 implementation(libs.ktor.server.cio)
+                // Account sync's host serves audio by byte range.
+                implementation(libs.ktor.server.partial.content)
             }
         }
 

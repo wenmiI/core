@@ -99,6 +99,8 @@ internal class LibrarySyncPhoneRepositoryImpl(
 
     override suspend fun reach(qrText: String): DesktopInfo {
         val invite = SyncPairInvite.parse(qrText) ?: throw LibrarySyncException(LibrarySyncProblem.FAILED, "not a sync pairing code")
+        // One outbox, one place it goes: a device is paired or signed in to an account, never both.
+        if (prefs.current().account != null) throw LibrarySyncException(LibrarySyncProblem.FAILED, "signed in to a sync account; sign out of it first")
         requireLocalNetwork()
         val (host, desktop) = transport { client.pairHello(invite, phoneHello()) }
         pendingInvite = invite

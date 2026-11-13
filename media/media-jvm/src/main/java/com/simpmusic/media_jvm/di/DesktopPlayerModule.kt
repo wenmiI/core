@@ -2,6 +2,7 @@ package com.simpmusic.media_jvm.di
 
 import com.maxrave.common.Config.SERVICE_SCOPE
 import com.maxrave.domain.mediaservice.handler.DownloadHandler
+import com.maxrave.domain.repository.LocalAudioReader
 import com.maxrave.domain.mediaservice.player.MediaPlayerInterface
 import com.maxrave.domain.notification.DesktopNotificationManager
 import com.maxrave.domain.repository.CacheRepository
@@ -67,8 +68,11 @@ private val desktopPlayerModule =
                 streamRepository = get(),
                 songRepository = get(),
                 desktopNotificationManager = get(),
+                accountDownloads = { getOrNull() },
             )
         }
+        // Account sync reads finished downloads through the store that wrote them.
+        single<LocalAudioReader> { get<DownloadHandler>() as LocalAudioReader }
     }
 
 fun loadDesktopPlayerModule() = loadKoinModules(desktopPlayerModule)

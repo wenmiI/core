@@ -2,8 +2,10 @@ package com.maxrave.media3.service.download
 
 import android.content.Context
 import androidx.core.net.toUri
+import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.DatabaseProvider
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.CacheDataSource
@@ -25,6 +27,8 @@ import com.maxrave.domain.data.player.LiveStreamRegistry
 import com.maxrave.domain.extension.now
 import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.mediaservice.handler.DownloadHandler
+import com.maxrave.domain.repository.AccountDownloadsRepository
+import com.maxrave.domain.repository.LocalAudioReader
 import com.maxrave.domain.repository.SongRepository
 import com.maxrave.domain.repository.StreamRepository
 import com.maxrave.domain.utils.isLive
@@ -42,6 +46,7 @@ import kotlinx.coroutines.flow.lastOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.ByteArrayInputStream
 import java.util.concurrent.Executor
@@ -55,10 +60,87 @@ internal class DownloadUtils(
     private val streamRepository: StreamRepository,
     private val songRepository: SongRepository,
     databaseProvider: DatabaseProvider,
-) : DownloadHandler {
+    // Account sync: the host's copy of downloaded audio. Null on a build that binds none; every call
+    // is a no-op while no account is signed in.
+    private val accountDownloads: () -> AccountDownloadsRepository?,
+) : DownloadHandler,
+    LocalAudioReader {
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    private val dataSourceFactory =
+    // Downloads whose bytes on disk so far came from the account's host. Kept across restarts: a
+    // download resumed from the other source would join two encodings of the song into one file.
+    private val hostStarted = context.getSharedPreferences("account_downloads", Context.MODE_PRIVATE)
+
+    private fun startedOnHost(mediaId: String): Boolean = hostStarted.getBoolean(mediaId, false)
+
+    private fun setStartedOnHost(
+        mediaId: String,
+        started: Boolean,
+    ) = hostStarted.edit().apply { if (started) putBoolean(mediaId, true) else remove(mediaId) }.apply()
+
+    /**
+     * The request for the account host's copy of a download, or null to take it from YouTube: no
+     * account signed in, the host lacks the song or is away, a video stream, or a download already
+     * part-way in from YouTube. Throws when a download that began on the host cannot go on there; what
+     * it had is dropped, and the retry starts over from YouTube.
+     */
+    private fun hostSpec(dataSpec: DataSpec): DataSpec? {
+        val mediaId = dataSpec.key ?: return null
+        if (mediaId.contains(MERGING_DATA_TYPE.VIDEO)) return null
+        val account = accountDownloads() ?: return null
+        if (downloadCache.isFullyCached(mediaId, dataSpec.position)) return null
+        val onHost = startedOnHost(mediaId)
+        if (!onHost && downloadCache.getCachedBytes(mediaId, 0, C.LENGTH_UNSET.toLong()) > 0) return null
+        val remote = runBlocking(Dispatchers.IO) { account.locate(mediaId) }
+        if (remote == null) {
+            if (!onHost) return null
+            setStartedOnHost(mediaId, false)
+            downloadCache.removeResource(mediaId)
+            throw java.io.IOException("The sync account's host stopped serving $mediaId; starting over from YouTube")
+        }
+        setStartedOnHost(mediaId, true)
+        return dataSpec
+            .buildUpon()
+            .setUri(remote.url.toUri())
+            .setHttpRequestHeaders(remote.headers)
+            .build()
+    }
+
+    override suspend fun read(
+        videoId: String,
+        write: suspend (bytes: ByteArray, length: Int) -> Unit,
+    ): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!downloadCache.isFullyCached(videoId, 0)) return@withContext false
+            // The cache alone: nothing upstream, and nothing written back.
+            val source =
+                CacheDataSource
+                    .Factory()
+                    .setCache(downloadCache)
+                    .setUpstreamDataSourceFactory(null)
+                    .setCacheWriteDataSinkFactory(null)
+                    .createDataSource()
+            try {
+                source.open(
+                    DataSpec
+                        .Builder()
+                        .setUri(videoId.toUri())
+                        .setKey(videoId)
+                        .build(),
+                )
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = source.read(buffer, 0, buffer.size)
+                    if (read == C.RESULT_END_OF_INPUT) break
+                    if (read > 0) write(buffer, read)
+                }
+                true
+            } finally {
+                source.close()
+            }
+        }
+
+    private val youtubeDataSourceFactory =
         ResolvingDataSource.Factory(
             CacheDataSource
                 .Factory()
@@ -170,6 +252,13 @@ internal class DownloadUtils(
             }
             return@Factory dataSpecReturn
         }
+
+    private val hostDataSourceFactory = OkHttpDataSource.Factory(OkHttpClient.Builder().build())
+
+    private val dataSourceFactory =
+        DataSource.Factory {
+            AccountAudioDataSource(youtubeDataSourceFactory.createDataSource(), hostDataSourceFactory.createDataSource(), ::hostSpec)
+        }
     val downloadNotificationHelper =
         DownloadNotificationHelper(
             context,
@@ -265,6 +354,8 @@ internal class DownloadUtils(
     }
 
     override fun removeDownload(videoId: String) {
+        accountDownloads()?.removed(videoId)
+        setStartedOnHost(videoId, false)
         DownloadService.sendRemoveDownload(
             context,
             MusicDownloadService::class.java,
@@ -429,6 +520,10 @@ internal class DownloadUtils(
                         when (download.state) {
                             Download.STATE_COMPLETED -> {
                                 playerCache.removeResource(id)
+                                if (!isVideo) {
+                                    setStartedOnHost(songId, false)
+                                    accountDownloads()?.downloaded(songId)
+                                }
                             }
 
                             else -> {

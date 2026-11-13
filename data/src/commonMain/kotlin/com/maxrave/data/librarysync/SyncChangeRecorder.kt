@@ -58,6 +58,15 @@ internal class SyncChangeRecorder(
 
     suspend fun play(syncId: String) = record(SyncKind.HISTORY, syncId, SyncOp.ADD, null)
 
+    /** The user downloaded a song here, or removed its download. Noted only while signed in to an account. */
+    suspend fun download(
+        videoId: String,
+        on: Boolean,
+    ) {
+        if (prefs.current().account == null) return
+        record(SyncKind.SONG_DOWNLOAD, videoId, SyncOp.SET, if (on) ON else OFF)
+    }
+
     /**
      * The playlist was linked to YouTube (or the link changed): it goes out whole, so every song
      * carries its YouTube entry id and the other side can edit the YouTube playlist too.

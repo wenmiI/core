@@ -23,6 +23,8 @@ private const val TAG = "LibrarySync"
 internal class SyncApplier(
     private val dao: SyncDao,
     private val local: LocalDataSource,
+    // Account sync only; without it a download change is skipped like any kind this side does not know.
+    private val downloads: SyncDownloads? = null,
 ) {
     suspend fun applyRefs(refs: SyncRefs) {
         refs.songs.forEach { dao.insertSongIfMissing(it.toEntity()) }
@@ -72,6 +74,7 @@ internal class SyncApplier(
                 SyncKind.LOCAL_PLAYLIST_TRACK -> applyTrack(change, on, sendWhole)
                 SyncKind.LOCAL_PLAYLIST_ORDER -> applyOrder(change, sendWhole)
                 SyncKind.HISTORY -> events[change.key]?.let { addPlay(it, ownDeviceId) } ?: false
+                SyncKind.SONG_DOWNLOAD -> downloads?.apply(change.key, on) ?: false
                 else -> false.also { Logger.w(TAG, "unknown change kind ${change.entity}") }
             }
         } catch (e: Exception) {
@@ -234,6 +237,18 @@ internal class SyncApplier(
         )
         return true
     }
+}
+
+/**
+ * What a download made or removed on another device of the account means on this side: a device
+ * downloads or removes the song itself, the host keeps or drops its copy of the audio. Returns
+ * whether this side now holds what the change says.
+ */
+internal fun interface SyncDownloads {
+    suspend fun apply(
+        videoId: String,
+        on: Boolean,
+    ): Boolean
 }
 
 /** A YouTube playlist id in both spellings the app stores: bare and with the "VL" browse prefix. */

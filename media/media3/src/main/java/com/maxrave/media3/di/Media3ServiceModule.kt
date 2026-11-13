@@ -52,6 +52,7 @@ import com.maxrave.domain.data.player.LiveStreamRegistry
 import com.maxrave.domain.extension.now
 import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.mediaservice.handler.DownloadHandler
+import com.maxrave.domain.repository.LocalAudioReader
 import com.maxrave.domain.mediaservice.handler.MediaPlayerHandler
 import com.maxrave.domain.mediaservice.player.MediaPlayerInterface
 import com.maxrave.domain.repository.CacheRepository
@@ -153,8 +154,11 @@ private val mediaServiceModule =
                 databaseProvider = get(),
                 streamRepository = get(),
                 songRepository = get(),
+                accountDownloads = { getOrNull() },
             )
         }
+        // Account sync reads finished downloads through the store that wrote them.
+        single<LocalAudioReader> { get<DownloadHandler>() as LocalAudioReader }
 
         // AudioAttributes
         single<AudioAttributes>(createdAtStart = true) {

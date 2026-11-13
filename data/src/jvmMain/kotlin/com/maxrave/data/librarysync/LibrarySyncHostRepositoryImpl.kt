@@ -122,6 +122,12 @@ internal class LibrarySyncHostRepositoryImpl(
     override suspend fun startPairing() {
         lifecycle.withLock {
             deviceId = prefs.deviceId()
+            // One log or one outbox: a computer signed in to a sync account is that account's device,
+            // and cannot also keep the log for phones of its own.
+            if (prefs.current().account != null) {
+                _pairing.value = LibrarySyncPairingState.Failed(LibrarySyncProblem.FAILED, "signed in to a sync account; sign out of it first")
+                return@withLock
+            }
             _pairing.value = LibrarySyncPairingState.Starting
             val found = withContext(Dispatchers.IO) { reachableAddresses() }.map { NetAddress(it.interfaceName, it.ip) }
             if (found.isEmpty()) {
