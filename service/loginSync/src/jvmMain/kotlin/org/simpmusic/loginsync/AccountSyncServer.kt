@@ -186,9 +186,9 @@ class AccountSyncServer(
         session: Session,
     ) {
         val request =
-            readBody(call)?.let { PairedSyncWire.gunzip(it) }
+            readBody(call)?.let { AccountSyncWire.gunzip(it) }
                 ?: return call.respond(HttpStatusCode.PayloadTooLarge)
-        call.respondBytes(PairedSyncWire.gzip(handler.sync(session, request)), ContentType.Application.OctetStream)
+        call.respondBytes(AccountSyncWire.gzip(handler.sync(session, request)), ContentType.Application.OctetStream)
     }
 
     private fun audioFile(

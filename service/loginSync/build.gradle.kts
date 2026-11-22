@@ -1,4 +1,5 @@
 import com.android.build.gradle.internal.tasks.CompileArtProfileTask
+import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -14,9 +15,21 @@ kotlin {
         minSdk = 26
     }
 
-    // Android sends, Desktop receives; iOS takes no part. With JVM-based targets only, commonMain can
-    // use javax.crypto directly — no expect/actual for the cipher.
+    // Android sends, Desktop receives. The QR pairing (login sync, library sync) lives in jvmSharedMain,
+    // Android and Desktop only, where it can use javax.crypto directly — no expect/actual for the
+    // cipher. iOS gets commonMain alone: the sync account's client, which seals nothing.
     jvm()
+    iosArm64()
+    iosSimulatorArm64()
+
+    applyDefaultHierarchyTemplate {
+        common {
+            group("jvmShared") {
+                withJvm()
+                withCompilations { it.target.platformType == KotlinPlatformType.androidJvm }
+            }
+        }
+    }
 
     sourceSets {
         commonMain {
@@ -28,6 +41,8 @@ kotlin {
                 implementation(projects.ktorExt)
                 // Logger.
                 implementation(projects.common)
+                // The account channel's gzip, on every target.
+                implementation(libs.okio)
             }
         }
 

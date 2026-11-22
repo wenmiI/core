@@ -62,6 +62,17 @@ kotlin {
     jvm {
     }
 
+    // Desktop and iOS share one playback handler (JvmMediaPlayerHandlerImpl): both drive a
+    // MediaPlayerInterface of their own, while Android runs Media3's session service instead.
+    applyDefaultHierarchyTemplate {
+        common {
+            group("nonAndroid") {
+                withJvm()
+                group("ios")
+            }
+        }
+    }
+
     dependencies {
         implementation(platform(libs.koin.bom))
     }
@@ -81,6 +92,9 @@ kotlin {
                 // application id (only Full builds do).
                 implementation(projects.discord)
                 implementation(projects.listenTogether)
+                // Sync account on every platform; login sync and library sync's pairing on Android and
+                // Desktop only (the service keeps those in its jvmShared source set).
+                implementation(projects.loginSync)
 
                 // Last.fm (gated: real scrobbler for full builds, no-op stub for FOSS builds)
                 if (isFullBuild) {
@@ -121,13 +135,13 @@ kotlin {
                 implementation(libs.koin.android)
                 implementation(projects.media3)
                 implementation(libs.room.ktx)
-                // Login sync: the phone sends sign-ins to the Desktop
-                implementation(projects.loginSync)
             }
         }
 
         iosMain {
             dependencies {
+                // AVPlayer playback, bound by Loader.ios.kt the way jvmMain binds media-jvm.
+                implementation(projects.mediaIos)
                 // Add iOS-specific dependencies here. This a source set created by Kotlin Gradle
                 // Plugin (KGP) that each specific iOS target (e.g., iosX64) depends on as
                 // part of KMP’s default source set hierarchy. Note that this source set depends
@@ -142,8 +156,6 @@ kotlin {
                 implementation(libs.nowplaying)
                 implementation(libs.jna)
                 implementation(libs.jna.platform)
-                // Login sync: the Desktop receives sign-ins from the phone
-                implementation(projects.loginSync)
             }
         }
     }

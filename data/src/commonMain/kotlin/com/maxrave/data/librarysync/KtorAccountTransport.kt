@@ -7,10 +7,7 @@ import org.simpmusic.loginsync.AccountSyncHttpException
 import org.simpmusic.loginsync.AccountSyncWire
 import org.simpmusic.loginsync.PhoneHello
 
-/**
- * [AccountTransport] over the loginSync service's client. The same file sits in androidMain and
- * jvmMain: the service builds for those two targets only, so commonMain cannot name it.
- */
+/** [AccountTransport] over the loginSync service's client, on every platform the app runs on. */
 internal class KtorAccountTransport(
     private val client: AccountSyncClient,
 ) : AccountTransport {

@@ -109,6 +109,35 @@ data class YouTubeClient(
                 userAgent = "Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.4 Safari/605.1.15",
             )
 
+        /**
+         * PipePipe's `tv_samsung`: the TV player on a Samsung Tizen set. Answers `/player` without a
+         * PO token, and every URL needs its signature and `n` solved. Versions read off PipePipe's
+         * pinned extractor (`YoutubeStreamExtractor.PlayerClient`), the source of truth for which
+         * client still plays — see LocalStreamResolver.
+         */
+        val TVHTML5_TIZEN =
+            YouTubeClient(
+                clientName = "TVHTML5",
+                clientVersion = "5.20260707",
+                api_key = "AIzaSyDCU8hByM-4DrUqRUYnGn-3llEO78bcxq8",
+                userAgent = "Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1",
+                deviceMake = "Samsung",
+                deviceModel = "UKS9800",
+                osName = "Tizen",
+                osVersion = "2.4.0",
+                xClientName = 7,
+            )
+
+        /** PipePipe's `tv_simply`, asked when [TVHTML5_TIZEN] is refused. */
+        val TVHTML5_SIMPLY_V1 =
+            YouTubeClient(
+                clientName = "TVHTML5_SIMPLY",
+                clientVersion = "1.0",
+                api_key = "AIzaSyDCU8hByM-4DrUqRUYnGn-3llEO78bcxq8",
+                userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36,gzip(gfe)",
+                xClientName = 75,
+            )
+
         val TVHTML5 =
             YouTubeClient(
                 clientName = "TVHTML5",

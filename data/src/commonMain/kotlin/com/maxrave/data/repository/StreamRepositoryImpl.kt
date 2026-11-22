@@ -92,26 +92,30 @@ internal class StreamRepositoryImpl(
     ): Flow<String?> =
         flow {
             val itag =
-                if (isDownloading) {
-                    QUALITY.itagOf(dataStoreManager.downloadQuality.first())
-                } else {
-                    QUALITY.itagOf(dataStoreManager.quality.first())
-                }
+                playableAudioItag(
+                    if (isDownloading) {
+                        QUALITY.itagOf(dataStoreManager.downloadQuality.first())
+                    } else {
+                        QUALITY.itagOf(dataStoreManager.quality.first())
+                    },
+                )
             val videoItag =
-                if (!muxed) {
-                    VIDEO_QUALITY.itags.getOrNull(
-                        VIDEO_QUALITY.items.indexOf(
-                            if (isDownloading) {
-                                dataStoreManager.videoDownloadQuality.first()
-                            } else {
-                                dataStoreManager.videoQuality.first()
-                            },
-                        ),
-                    )
-                        ?: ITAG.VIDEO_360P
-                } else {
-                    ITAG.MUXED_360P
-                }
+                playableVideoItag(
+                    if (!muxed) {
+                        VIDEO_QUALITY.itags.getOrNull(
+                            VIDEO_QUALITY.items.indexOf(
+                                if (isDownloading) {
+                                    dataStoreManager.videoDownloadQuality.first()
+                                } else {
+                                    dataStoreManager.videoQuality.first()
+                                },
+                            ),
+                        )
+                            ?: ITAG.VIDEO_360P
+                    } else {
+                        ITAG.MUXED_360P
+                    },
+                )
             youTube
                 .player(
                     videoId,
@@ -167,12 +171,13 @@ internal class StreamRepositoryImpl(
                             ?: formatList.find { it.itag == ITAG.VIDEO_720P }
                             ?: formatList.find { it.itag == ITAG.VIDEO_360P }
                             ?: formatList.find { !it.isAudio && it.url.isNullOrEmpty().not() }
-                    val audioTwinItag = ITAG.highQualityTwinOf(itag)
+                    // A twin only this platform can play: iOS has no Opus, so 141's twin 774 is out there.
+                    val audioTwinItag = ITAG.highQualityTwinOf(itag)?.takeIf { playableAudioItag(it) == it }
                     val audioFormat =
                         formatList.find { it.itag == itag } ?: if (audioTwinItag != null) {
                             formatList.find { it.itag == audioTwinItag }
                         } else {
-                            formatList.find { it.isAudio && it.url.isNullOrEmpty().not() }
+                            formatList.find { it.isAudio && it.url.isNullOrEmpty().not() && canPlayAudioMimeType(it.mimeType) }
                         }
                     var format =
                         if (isVideo) {
@@ -232,7 +237,14 @@ internal class StreamRepositoryImpl(
                     }
                     insertNewFormat(
                         NewFormatEntity(
-                            videoId = if (VIDEO_QUALITY.itags.contains(format?.itag)) "${MERGING_DATA_TYPE.VIDEO}$videoId" else videoId,
+                            // A video resolved to the muxed stream is still the video's row: stored
+                            // under the bare id it replaced the song's audio row.
+                            videoId =
+                                if (VIDEO_QUALITY.itags.contains(format?.itag) || (isVideo && format?.itag == ITAG.MUXED_360P)) {
+                                    "${MERGING_DATA_TYPE.VIDEO}$videoId"
+                                } else {
+                                    videoId
+                                },
                             itag = format?.itag ?: itag,
                             mimeType =
                                 Regex("""([^;]+);\s*codecs=["']([^"']+)["']""")

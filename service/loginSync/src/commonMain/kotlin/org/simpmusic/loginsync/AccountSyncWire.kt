@@ -1,6 +1,12 @@
 package org.simpmusic.loginsync
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import okio.Buffer
+import okio.GzipSink
+import okio.GzipSource
+import okio.buffer
+import okio.use
 
 /*
  * The channel account sync runs on: plain HTTP requests to a host the user runs, named by a URL and
@@ -17,7 +23,10 @@ object AccountSyncWire {
     const val SERVICE = "simpmusic-account-sync"
     const val API = 1
 
-    const val MAX_BODY_BYTES = PairedSyncWire.MAX_BODY_BYTES
+    // The paired channel's limits, restated: that one is JVM and Android only (javax.crypto), this
+    // one runs on iOS too.
+    const val MAX_BODY_BYTES = 16 * 1024 * 1024
+    internal const val MAX_PLAIN_BYTES = 128 * 1024 * 1024
 
     /** One song's audio. A long mix at the highest bitrate stays well under this. */
     const val MAX_AUDIO_BYTES = 1024L * 1024 * 1024
@@ -29,7 +38,25 @@ object AccountSyncWire {
     const val SYNC = "/v1/sync"
     const val AUDIO = "/v1/audio"
 
-    internal val json get() = PairedSyncWire.json
+    internal val json = Json { ignoreUnknownKeys = true }
+
+    /** The same gzip the paired channel writes (PairedSyncWire.gzip), through okio so iOS has it. */
+    internal fun gzip(plain: ByteArray): ByteArray {
+        val packed = Buffer()
+        GzipSink(packed).buffer().use { it.write(plain) }
+        return packed.readByteArray()
+    }
+
+    /** Null past [MAX_PLAIN_BYTES]: a body that inflates without end is refused, not swallowed. */
+    internal fun gunzip(packed: ByteArray): ByteArray? =
+        GzipSource(Buffer().write(packed)).buffer().use { input ->
+            val out = Buffer()
+            while (!input.exhausted()) {
+                input.read(out, 64L * 1024)
+                if (out.size > MAX_PLAIN_BYTES) return null
+            }
+            out.readByteArray()
+        }
 
     /** YouTube's ids are 11 of these; anything else never reaches the host's disk as a file name. */
     private val VIDEO_ID = Regex("[A-Za-z0-9_-]{1,64}")
@@ -104,3 +131,14 @@ class AccountSyncHttpException(
     val status: Int,
     detail: String?,
 ) : Exception(detail)
+
+/**
+ * A device naming itself: the phone's hello on the paired channel, and the device a sync account
+ * signs in. Here rather than beside PairedSyncWire because account sign-in carries it on iOS too.
+ */
+@Serializable
+data class PhoneHello(
+    val phoneId: String,
+    val name: String,
+    val os: String,
+)

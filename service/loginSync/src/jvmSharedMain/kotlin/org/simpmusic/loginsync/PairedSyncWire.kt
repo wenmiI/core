@@ -78,13 +78,6 @@ object PairedSyncWire {
 }
 
 @Serializable
-data class PhoneHello(
-    val phoneId: String,
-    val name: String,
-    val os: String,
-)
-
-@Serializable
 data class DesktopHello(
     val desktopId: String,
     val name: String,

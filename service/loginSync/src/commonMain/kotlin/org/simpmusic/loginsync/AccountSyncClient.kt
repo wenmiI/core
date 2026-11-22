@@ -88,10 +88,10 @@ class AccountSyncClient {
                 http.post(server + AccountSyncWire.SYNC) {
                     auth(token)
                     contentType(ContentType.Application.OctetStream)
-                    setBody(PairedSyncWire.gzip(request))
+                    setBody(AccountSyncWire.gzip(request))
                 }
             }.requireOk()
-        return PairedSyncWire.gunzip(response.bodyAsBytes()) ?: throw AccountSyncHttpException(HttpStatusCode.PayloadTooLarge.value, "the host's reply is too large")
+        return AccountSyncWire.gunzip(response.bodyAsBytes()) ?: throw AccountSyncHttpException(HttpStatusCode.PayloadTooLarge.value, "the host's reply is too large")
     }
 
     suspend fun hasAudio(
