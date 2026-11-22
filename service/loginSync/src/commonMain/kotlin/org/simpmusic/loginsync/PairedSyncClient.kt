@@ -12,6 +12,7 @@ import io.ktor.client.statement.bodyAsBytes
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
