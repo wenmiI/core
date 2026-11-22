@@ -42,6 +42,10 @@ internal class AudioSession(
     private val observers = mutableListOf<NSObjectProtocol>()
     private var resumeAfterInterruption = false
 
+    /**
+     * Called on every play, not at launch: activating a Playback session stops whatever else the
+     * phone was playing, which must not happen merely because SimpMusic was opened.
+     */
     @OptIn(ExperimentalForeignApi::class)
     fun activate() {
         val session = AVAudioSession.sharedInstance()

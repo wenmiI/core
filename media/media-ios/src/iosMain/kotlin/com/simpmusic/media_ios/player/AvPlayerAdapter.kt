@@ -51,8 +51,11 @@ import platform.CoreMedia.CMTimeMake
 import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
+import platform.Foundation.NSThread
 import platform.Foundation.NSURL
 import platform.darwin.NSObjectProtocol
+import platform.darwin.dispatch_get_main_queue
+import platform.darwin.dispatch_sync
 import kotlin.random.Random
 
 private const val TAG = "AvPlayerAdapter"
@@ -138,7 +141,6 @@ class AvPlayerAdapter(
         )
 
     init {
-        audioSession.activate()
         avPlayer.automaticallyWaitsToMinimizeStalling = true
         coroutineScope.launch { tick() }
     }
@@ -270,7 +272,7 @@ class AvPlayerAdapter(
         }
     }
 
-    override fun addMediaItem(mediaItem: GenericMediaItem) {
+    override fun addMediaItem(mediaItem: GenericMediaItem) = onPlayerThread {
         playlist.add(mediaItem)
         pointAtFirstItemIfUnset()
         if (internalShuffleModeEnabled) insertAppendedIntoShuffleOrder()
@@ -281,8 +283,8 @@ class AvPlayerAdapter(
     override fun addMediaItem(
         index: Int,
         mediaItem: GenericMediaItem,
-    ) {
-        if (index !in 0..playlist.size) return
+    ) = onPlayerThread {
+        if (index !in 0..playlist.size) return@onPlayerThread
         val currentIndexBeforeInsert = localCurrentMediaItemIndex
         playlist.add(index, mediaItem)
         if (index <= localCurrentMediaItemIndex) localCurrentMediaItemIndex++
@@ -532,14 +534,15 @@ class AvPlayerAdapter(
 
     override var shuffleModeEnabled: Boolean
         get() = internalShuffleModeEnabled
-        set(value) {
-            if (internalShuffleModeEnabled == value) return
-            internalShuffleModeEnabled = value
-            if (value) createShuffleOrder() else clearShuffleOrder()
-            val list = getShuffledMediaItemList()
-            notifyListeners { onShuffleModeEnabledChanged(value, list) }
-            notifyTimelineChanged()
-        }
+        set(value) =
+            onPlayerThread {
+                if (internalShuffleModeEnabled == value) return@onPlayerThread
+                internalShuffleModeEnabled = value
+                if (value) createShuffleOrder() else clearShuffleOrder()
+                val list = getShuffledMediaItemList()
+                notifyListeners { onShuffleModeEnabledChanged(value, list) }
+                notifyTimelineChanged()
+            }
 
     override var repeatMode: Int
         get() = internalRepeatMode
@@ -820,6 +823,7 @@ class AvPlayerAdapter(
     }
 
     private fun startPlayer() {
+        audioSession.activate()
         avPlayer.play()
         avPlayer.rate = internalPlaybackSpeed
     }
@@ -892,6 +896,15 @@ class AvPlayerAdapter(
                 }
             }
         }
+    }
+
+    /**
+     * Runs [block] on the main thread, where every other change to the playlist happens. The handler
+     * calls in from the main thread (its scope is the same one), so this is usually a direct call;
+     * from anywhere else it waits for the main thread rather than racing it on a list.
+     */
+    private fun onPlayerThread(block: () -> Unit) {
+        if (NSThread.isMainThread) block() else dispatch_sync(dispatch_get_main_queue()) { block() }
     }
 
     private fun notifyListeners(block: MediaPlayerListener.() -> Unit) {
