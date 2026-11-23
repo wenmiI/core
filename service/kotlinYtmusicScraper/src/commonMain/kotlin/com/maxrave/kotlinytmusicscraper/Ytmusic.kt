@@ -1355,9 +1355,15 @@ class Ytmusic {
         onComplete(isSuccess, lastException)
     }
 
+    /**
+     * Whether [url] refuses a player. Asked as a player asks, with a two-byte ranged GET, not a HEAD:
+     * googlevideo refuses HEAD on the TV clients' adaptive formats while serving their ranged GETs
+     * (measured 2026-11-23: itags 137/248/399 HEAD 403, ranged GET 206), which threw away every stream
+     * the iOS resolver found.
+     */
     suspend fun is403Url(url: String): Boolean {
         return try {
-            return httpClient.head(url).status.value in 400..499
+            return httpClient.get(url) { header(HttpHeaders.Range, "bytes=0-1") }.status.value in 400..499
         } catch (e: Exception) {
             e.printStackTrace()
             true
