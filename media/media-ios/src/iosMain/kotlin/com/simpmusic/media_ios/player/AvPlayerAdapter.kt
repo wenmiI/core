@@ -10,7 +10,9 @@ import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.mediaservice.player.MediaPlayerInterface
 import com.maxrave.domain.mediaservice.player.MediaPlayerListener
 import com.maxrave.domain.repository.StreamRepository
+import com.maxrave.ktorext.getEngine
 import com.maxrave.logger.Logger
+import io.ktor.client.HttpClient
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import kotlinx.coroutines.CancellationException
@@ -128,6 +130,10 @@ class AvPlayerAdapter(
 
     /** Resolved ahead of time, so Next starts at once. Keyed by media id; a few entries at most. */
     private val resolvedSources = LinkedHashMap<String, PlayableSource>()
+
+    /** Fetches stream data (the playback cache) over the Darwin engine, which the resolver already
+     * uses; the resilient fetch retries the googlevideo connection drops AVPlayer cannot. */
+    private val httpClient by lazy { HttpClient(getEngine()) }
 
     private var currentSource: PlayableSource? = null
     private var currentItem: AVPlayerItem? = null
@@ -671,7 +677,7 @@ class AvPlayerAdapter(
     }
 
     private suspend fun resolve(mediaItem: GenericMediaItem): PlayableSource? =
-        runCatching { resolvePlayableSource(mediaItem, dataStoreManager, streamRepository) }
+        runCatching { resolvePlayableSource(mediaItem, dataStoreManager, streamRepository, httpClient) }
             .onFailure { if (it is CancellationException) throw it else Logger.e(TAG, "Resolving ${mediaItem.mediaId}: ${it.message}") }
             .getOrNull()
 

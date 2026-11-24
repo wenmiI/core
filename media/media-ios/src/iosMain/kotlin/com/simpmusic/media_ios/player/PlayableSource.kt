@@ -7,6 +7,7 @@ import com.maxrave.domain.extension.isVideo
 import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.repository.StreamRepository
 import com.maxrave.logger.Logger
+import io.ktor.client.HttpClient
 import com.simpmusic.media_ios.download.downloadedAudioPath
 import io.ktor.http.URLBuilder
 import kotlinx.coroutines.flow.first
@@ -41,6 +42,7 @@ internal suspend fun resolvePlayableSource(
     mediaItem: GenericMediaItem,
     dataStoreManager: DataStoreManager,
     streamRepository: StreamRepository,
+    httpClient: HttpClient,
 ): PlayableSource? {
     val videoId = mediaItem.mediaId
     val wantVideo = mediaItem.isVideo() && dataStoreManager.watchVideoInsteadOfPlayingAudio.first() == DataStoreManager.TRUE
@@ -56,21 +58,33 @@ internal suspend fun resolvePlayableSource(
             ?.let { PlayableSource(url = it, isVideo = wantVideo, isLive = true) }
     }
 
+    // The remote stream URL, from the stored format or a fresh resolution.
+    var remote: String? = null
     streamRepository.getNewFormat(if (wantVideo) "${MERGING_DATA_TYPE.VIDEO}$videoId" else videoId).lastOrNull()?.let { format ->
         val url = (if (wantVideo) format.videoUrl else format.audioUrl)?.takeIf { it.isNotEmpty() }
         if (url != null && streamRepository.is403Url(url).firstOrNull() == false) {
             Logger.d(TAG, "$videoId: ${if (wantVideo) "video" else "audio"} from the stored format")
-            return PlayableSource(url = url.forAvPlayer(), isVideo = wantVideo, mimeType = if (wantVideo) "video/mp4" else "audio/mp4")
+            remote = url
         }
     }
+    if (remote == null) {
+        // getStream is where a live broadcast is first recognised.
+        val fresh = streamRepository.getStream(dataStoreManager, videoId, isDownloading = false, isVideo = wantVideo).lastOrNull()
+        if (fresh != null && LiveStreamRegistry.isLive(videoId)) {
+            return PlayableSource(url = fresh, isVideo = wantVideo, isLive = true)
+        }
+        remote = fresh
+    }
+    val url = remote?.forAvPlayer() ?: return null
 
-    val url =
-        streamRepository
-            .getStream(dataStoreManager, videoId, isDownloading = false, isVideo = wantVideo)
-            .lastOrNull() ?: return null
-    // getStream is where a live broadcast is first recognised.
-    val live = LiveStreamRegistry.isLive(videoId)
-    return PlayableSource(url = url.forAvPlayer(), isVideo = wantVideo, isLive = live, mimeType = if (live) null else if (wantVideo) "video/mp4" else "audio/mp4")
+    // Audio plays from a local cache file: AVPlayer's own loader cannot hold a googlevideo connection
+    // (NSURLErrorDomain -1), so the resilient fetch downloads it first. A failed download falls back
+    // to the remote URL, no worse than before. Video (the muxed stream) stays remote: it is opt-in
+    // and can be large.
+    if (!wantVideo) {
+        cachedStreamFile(httpClient, url, videoId, "m4a")?.let { return PlayableSource(url = it, isLocalFile = true) }
+    }
+    return PlayableSource(url = url, isVideo = wantVideo, mimeType = if (wantVideo) "video/mp4" else "audio/mp4")
 }
 
 /**

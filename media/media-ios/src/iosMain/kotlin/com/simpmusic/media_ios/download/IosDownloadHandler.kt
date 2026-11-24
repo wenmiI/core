@@ -140,26 +140,9 @@ internal class IosDownloadHandler(
                 .lastOrNull()
                 ?.forAvPlayer()
                 ?: return false.also { Logger.w(TAG, "$videoId: no stream to download") }
+        // Shared with the playback cache: retries the googlevideo connection drops (-1005) per chunk.
         return stage(videoId, "m4a") { sink ->
-            var offset = 0L
-            var total = -1L
-            while (total < 0 || offset < total) {
-                val response = httpClient.get(url) { header(HttpHeaders.Range, "bytes=$offset-${offset + CHUNK_BYTES - 1}") }
-                if (response.status != HttpStatusCode.PartialContent && response.status != HttpStatusCode.OK) {
-                    Logger.w(TAG, "$videoId: ${response.status} at byte $offset")
-                    return@stage false
-                }
-                total =
-                    response.headers[HttpHeaders.ContentRange]?.substringAfterLast('/')?.toLongOrNull()
-                        ?: response.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeIf { response.status == HttpStatusCode.OK }
-                        ?: total
-                val bytes = response.readRawBytes()
-                if (bytes.isEmpty()) break
-                sink(bytes, bytes.size)
-                offset += bytes.size
-                if (response.status == HttpStatusCode.OK) break
-            }
-            offset > 0 && (total < 0 || offset >= total)
+            com.simpmusic.media_ios.player.fetchStreamChunked(httpClient, url) { bytes, length -> sink(bytes, length) }
         }
     }
 
