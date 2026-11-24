@@ -134,3 +134,16 @@ private fun trimCache(dir: Path) {
             .forEach { runCatching { FileSystem.SYSTEM.delete(it, mustExist = false) } }
     }
 }
+
+/**
+ * Where the self-hosted stream proxy lives (streamServer). Audio is fetched from here, not from
+ * googlevideo: the proxy runs the full tiered extractor server-side (uncapped) and proxies the
+ * bytes, so neither Google's ~1 MB cap nor the IP-bound URL reaches the phone. Overridable with the
+ * `simpmusic.stream.proxy` user default (e.g. a different host) without a rebuild; empty disables it
+ * and the on-device extraction is used instead.
+ */
+internal fun streamProxyBase(): String =
+    (platform.Foundation.NSUserDefaults.standardUserDefaults.stringForKey("simpmusic.stream.proxy")
+        ?: "http://100.77.213.185:8120")
+        .trim()
+        .trimEnd('/')

@@ -49,6 +49,15 @@ internal suspend fun resolvePlayableSource(
 
     if (!wantVideo) {
         downloadedAudioPath(videoId)?.let { return PlayableSource(url = it, isLocalFile = true) }
+        // Audio streams from the self-hosted proxy (streamServer): it runs the uncapped tiered
+        // extractor server-side and proxies the bytes, so neither Google's ~1 MB cap on the
+        // on-device URLs nor their IP binding reaches the phone. AVPlayer plays this plain,
+        // Range-supporting HTTP server directly. Empty proxy = fall through to on-device extraction.
+        val proxy = streamProxyBase()
+        if (proxy.isNotBlank()) {
+            Logger.d(TAG, "$videoId: audio via stream proxy")
+            return PlayableSource(url = "$proxy/audio/$videoId", mimeType = "audio/mp4")
+        }
     }
 
     if (LiveStreamRegistry.isLive(videoId)) {

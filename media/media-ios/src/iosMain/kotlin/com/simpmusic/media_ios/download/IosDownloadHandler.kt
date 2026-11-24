@@ -134,13 +134,20 @@ internal class IosDownloadHandler(
     }
 
     private suspend fun fetchFromYouTube(videoId: String): Boolean {
+        // Prefer the self-hosted proxy (uncapped, server-side extraction); the on-device URL is capped
+        // at ~1 MB, so a direct download stops after about a minute. Empty proxy = on-device URL.
+        val proxy = com.simpmusic.media_ios.player.streamProxyBase()
         val url =
-            streamRepository
-                .getStream(dataStoreManager, videoId, isDownloading = true, isVideo = false)
-                .lastOrNull()
-                ?.forAvPlayer()
-                ?: return false.also { Logger.w(TAG, "$videoId: no stream to download") }
-        // Shared with the playback cache: retries the googlevideo connection drops (-1005) per chunk.
+            if (proxy.isNotBlank()) {
+                "$proxy/audio/$videoId"
+            } else {
+                streamRepository
+                    .getStream(dataStoreManager, videoId, isDownloading = true, isVideo = false)
+                    .lastOrNull()
+                    ?.forAvPlayer()
+                    ?: return false.also { Logger.w(TAG, "$videoId: no stream to download") }
+            }
+        // Shared with the playback cache: retries connection drops per chunk.
         return stage(videoId, "m4a") { sink ->
             com.simpmusic.media_ios.player.fetchStreamChunked(httpClient, url) { bytes, length -> sink(bytes, length) }
         }
