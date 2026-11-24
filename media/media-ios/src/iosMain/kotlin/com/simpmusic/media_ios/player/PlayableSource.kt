@@ -21,6 +21,13 @@ internal data class PlayableSource(
     val isLocalFile: Boolean = false,
     val isVideo: Boolean = false,
     val isLive: Boolean = false,
+    /**
+     * The media type to hand AVPlayer when the URL carries none in its path. A googlevideo URL ends
+     * in `/videoplayback` with no extension, and AVFoundation then fails the item with a null error
+     * ("unknown error") instead of sniffing the response's Content-Type. Null for a local file (its
+     * extension is enough) and for a live HLS playlist (AVPlayer reads its own type).
+     */
+    val mimeType: String? = null,
 )
 
 /**
@@ -53,7 +60,7 @@ internal suspend fun resolvePlayableSource(
         val url = (if (wantVideo) format.videoUrl else format.audioUrl)?.takeIf { it.isNotEmpty() }
         if (url != null && streamRepository.is403Url(url).firstOrNull() == false) {
             Logger.d(TAG, "$videoId: ${if (wantVideo) "video" else "audio"} from the stored format")
-            return PlayableSource(url = url.forAvPlayer(), isVideo = wantVideo)
+            return PlayableSource(url = url.forAvPlayer(), isVideo = wantVideo, mimeType = if (wantVideo) "video/mp4" else "audio/mp4")
         }
     }
 
@@ -62,7 +69,8 @@ internal suspend fun resolvePlayableSource(
             .getStream(dataStoreManager, videoId, isDownloading = false, isVideo = wantVideo)
             .lastOrNull() ?: return null
     // getStream is where a live broadcast is first recognised.
-    return PlayableSource(url = url.forAvPlayer(), isVideo = wantVideo, isLive = LiveStreamRegistry.isLive(videoId))
+    val live = LiveStreamRegistry.isLive(videoId)
+    return PlayableSource(url = url.forAvPlayer(), isVideo = wantVideo, isLive = live, mimeType = if (live) null else if (wantVideo) "video/mp4" else "audio/mp4")
 }
 
 /**

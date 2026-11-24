@@ -28,6 +28,8 @@ import kotlinx.coroutines.withContext
 import platform.AVFoundation.AVAudioTimePitchAlgorithmSpectral
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
+import platform.AVFoundation.AVURLAsset
+import platform.AVFoundation.AVURLAssetOverrideMIMETypeKey
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
 import platform.AVFoundation.AVPlayerItemFailedToPlayToEndTimeNotification
 import platform.AVFoundation.AVPlayerItemStatusFailed
@@ -52,6 +54,7 @@ import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSThread
+import platform.Foundation.NSError
 import platform.Foundation.NSURL
 import platform.darwin.NSObjectProtocol
 import platform.darwin.dispatch_get_main_queue
@@ -681,7 +684,15 @@ class AvPlayerAdapter(
             transitionToState(InternalState.ERROR)
             return
         }
-        val item = AVPlayerItem.playerItemWithURL(url)
+        // A googlevideo URL carries no extension, so AVFoundation is told the type out of band or it
+        // fails the item with a null error; a local file and an HLS playlist carry their own.
+        val item =
+            if (source.mimeType != null) {
+                val asset = AVURLAsset.URLAssetWithURL(url, mapOf(AVURLAssetOverrideMIMETypeKey to source.mimeType))
+                AVPlayerItem.playerItemWithAsset(asset)
+            } else {
+                AVPlayerItem.playerItemWithURL(url)
+            }
         item.audioTimePitchAlgorithm = AVAudioTimePitchAlgorithmSpectral
         currentItem = item
         currentSource = source
@@ -733,7 +744,14 @@ class AvPlayerAdapter(
      */
     private fun handleItemFailed(why: String) {
         val videoId = currentMediaItem?.mediaId ?: return
-        Logger.w(TAG, "$videoId: $why (${currentItem?.error?.localizedDescription})")
+        val error = currentItem?.error
+        // The item's own error is often null ("unknown error"), so the resolved stream's host and
+        // whether it is the audio or the muxed-video URL are logged too: that says which CDN and itag
+        // AVPlayer refused, which is as far as this can narrow it without the error detail.
+        val host = currentSource?.url?.let { NSURL.URLWithString(it)?.host } ?: "?"
+        val kind = if (currentSource?.isVideo == true) "video" else "audio"
+        val detail = error?.let { "${it.domain} ${it.code}: ${it.localizedDescription}" } ?: "no error detail"
+        Logger.w(TAG, "$videoId: $why [$kind via $host] ($detail)")
         if (retriedVideoId != videoId && currentSource?.isLocalFile != true) {
             retriedVideoId = videoId
             val resumeAt = cachedPosition
